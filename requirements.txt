@@ -20,6 +20,8 @@ ibm-cloud-sdk-core==3.25.0
 ibm-platform-services==0.75.2
 ibm-quantum-schemas==0.9.20260612
 idna==3.18
+ImageIO==2.37.3
+imageio-ffmpeg==0.6.0
 isosurfaces==0.1.2
 kiwisolver==1.5.0
 manim==0.20.1
