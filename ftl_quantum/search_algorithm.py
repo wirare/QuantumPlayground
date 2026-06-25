@@ -80,7 +80,7 @@ qc = grover_algorithm(oracle, 3)
 print("Logical circuit:")
 print(qc.draw())
 
-backend = get_backend(fake=False)
+backend = get_backend(fake=True)
 
 pm = generate_preset_pass_manager(backend=backend, optimization_level=1)
 isa_circuit = pm.run(qc)
