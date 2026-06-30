@@ -10,7 +10,11 @@ class Matrix
 		Matrix(const std::vector<K> &vec, size_t rows, size_t cols): data(vec.begin(), vec.end()), rows(rows), cols(cols) {} 
 		Matrix(size_t rows, size_t cols): data(rows * cols), rows(rows), cols(cols) {}
 		Matrix(size_t rows, size_t cols, const K &value): data(rows * cols, value), rows(rows), cols(cols) {}
-		Matrix(size_t rows, size_t cols, const std::initializer_list<K> &init): data(init), rows(rows), cols(cols) {}
+		Matrix(size_t rows, size_t cols, const std::initializer_list<K> &init): data(init), rows(rows), cols(cols)
+		{
+			if (data.size() != rows * cols)
+				throw std::invalid_argument("Matrix initializer size does not match rows * cols");
+		}
 
 		size_t size() const { return data.size(); }
 		const std::vector<K> &getData() const { return data; }
@@ -61,7 +65,11 @@ class Matrix
 			return res;
 		}
 
-		Matrix operator*(const Matrix &other) { return mul_mat(other); }
+		size_t row_count() const { return rows; }
+		size_t col_count() const { return cols; }
+		K& operator()(size_t row, size_t col) { return data[row * cols + col]; }
+		const K& operator()(size_t row, size_t col) const { return data[row * cols + col]; }
+		Matrix operator*(const Matrix& other) const { return mul_mat(other); }
 
 	private:
 		std::vector<K> data;

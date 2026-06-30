@@ -3,6 +3,7 @@
 #include <complex>
 #include <initializer_list>
 #include <span>
+#include <string>
 #include <vector>
 #include <IGate.hpp>
 
@@ -46,33 +47,23 @@ class StateVector
 			return *this;
 		}
 
-		StateVector &gate(const IGate &g, std::span<const size_t> qubits)
+		StateVector &gate(const IGate &g, std::span<const size_t> qubits, std::span<const double> angular_params)
 		{
 			if (qubits.size() != g.qubits_count())
-				throw std::invalid_argument(std::string("Wrong number of qubits for gate ") + g.name().data());
+				throw std::invalid_argument(std::string("Gate ") + g.name().data() + std::string(" take ") + std::to_string(g.qubits_count()) + std::string(" qubit(s) in parameter."));
+			if (angular_params.size() != g.angular_params_count())
+				throw std::invalid_argument(std::string("Gate ") + g.name().data() + std::string(" take ") + std::to_string(g.angular_params_count()) + std::string(" angle(s) in parameter."));
 
 			MutableStateVectorView view(amplitudes.data(), amplitudes.size(), qubit_count);
 
-			g.apply(view, qubits);
+			g.apply(view, qubits, angular_params);
 
 			return *this;
 		}
 
-		StateVector &gate(const IGate &g, std::initializer_list<size_t> qubits)
+		StateVector &gate(const IGate &g, std::initializer_list<size_t> qubits, std::initializer_list<double> angular_params)
 		{
-			return gate(g, std::span<const size_t>(qubits.begin(), qubits.size()));
-		}
-
-		template <typename... Qs>
-		StateVector &gate(const IGate &g, Qs... qs)
-		{
-			static_assert((std::is_integral_v<Qs> && ...), "Qubit indices must be integers");
-
-			std::array<size_t, sizeof...(qs)> qubits{
-				static_cast<size_t>(qs)...
-			};
-
-			return gate(g, std::span<const size_t>(qubits.data(), qubits.size()));
+			return gate(g, std::span<const size_t>(qubits.begin(), qubits.size()), std::span(angular_params.begin(), angular_params.size()));
 		}
 
 	private:
