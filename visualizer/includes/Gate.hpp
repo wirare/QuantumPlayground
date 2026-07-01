@@ -5,13 +5,11 @@
 #include <StateVector.hpp>
 #include <Matrix.hpp>
 #include <cmath>
-#include <numbers>
 #include <span>
 #include <string_view>
-#include <utility>
 
-#define DEFINE_NON_MATRIX_MULTI_QUBITS_GATE(gateName, min_qubit, angular_params_number, ...)											\
-	class gateName : public IGate																										\
+#define BASE_NON_MATRIX_GATE(gateName, gateNameSmall, qubits_number, angular_params_number, multi_qubit, ...)							\
+	class gateNameSmall : public IGate																									\
 	{																																	\
 		public:																															\
 			void apply([[maybe_unused]] MutableStateVectorView &state,																	\
@@ -21,50 +19,42 @@
 				__VA_ARGS__;																											\
 			}																															\
 																																		\
-			bool is_multi_qubit_gate() const override { return true; }																	\
+			bool is_multi_qubit_gate() const override { return multi_qubit; }															\
 			std::string_view name() const override { return #gateName; }																\
 			size_t angular_params_count() const override { return angular_params_number; }												\
-			size_t qubits_count() const override { return min_qubit; }																	\
-	}																																	
+			size_t qubits_count() const override { return qubits_number; }																\
+	};																																	\
+	inline const gateNameSmall &gateName() { static const gateNameSmall gate; return gate; }											\
 
-#define DEFINE_NON_MATRIX_GATE(gateName, qubits_number, angular_params_number, ...)														\
-	class gateName : public IGate																										\
-	{																																	\
+#define DEFINE_NON_MATRIX_MULTI_QUBITS_GATE(gateName, gateNameSmall, min_qubit, angular_params_number, ...) \
+	BASE_NON_MATRIX_GATE(gateName, gateNameSmall, min_qubit, angular_params_number, true, __VA_ARGS__)
+
+
+#define DEFINE_NON_MATRIX_GATE(gateName, gateNameSmall, qubits_number, angular_params_number, ...) \
+	BASE_NON_MATRIX_GATE(gateName, gateNameSmall, qubits_number, angular_params_number, false, __VA_ARGS__)
+
+#define DEFINE_MATRIX_GATE(gateName, gateNameSmall, qubits_number, angular_params_number, ...)											\
+    class gateNameSmall : public IGate																									\
+    {																																	\
 		public:																															\
-			void apply([[maybe_unused]] MutableStateVectorView &state,																	\
+			void apply([[maybe_unused]] MutableStateVectorView& state,																	\
 					   [[maybe_unused]] std::span<const size_t> qubits,																	\
 					   [[maybe_unused]] std::span<const double> angular_params) const override											\
 			{																															\
-				__VA_ARGS__;																											\
+				const Matrix<Complex> gate_matrix = matrix(angular_params);																\
+				Gate::detail::apply_matrix_gate(state, qubits, gate_matrix);															\
 			}																															\
 																																		\
 			size_t qubits_count() const override { return qubits_number; }																\
 			std::string_view name() const override { return #gateName; }																\
 			size_t angular_params_count() const override { return angular_params_number; }												\
 			bool is_multi_qubit_gate() const override { return false; }																	\
-	}
-
-#define DEFINE_MATRIX_GATE(gateName, qubits_number, angular_params_number, ...)															\
-    class gateName : public IGate																										\
-    {																																	\
-    public:																																\
-        void apply([[maybe_unused]] MutableStateVectorView& state,																		\
-                   [[maybe_unused]] std::span<const size_t> qubits,																		\
-                   [[maybe_unused]] std::span<const double> angular_params) const override												\
-        {																																\
-            const Matrix<Complex> gate_matrix = matrix(angular_params);																	\
-            Gate::detail::apply_matrix_gate(state, qubits, gate_matrix);																\
-        }																																\
-																																		\
-        size_t qubits_count() const override { return qubits_number; }																	\
-        std::string_view name() const override { return #gateName; }																	\
-        size_t angular_params_count() const override { return angular_params_number; }													\
-        bool is_multi_qubit_gate() const override { return false; }																		\
-        Matrix<Complex> matrix([[maybe_unused]] std::span<const double> angular_params) const override									\
-        {																																\
-            __VA_ARGS__																													\
-        }																																\
-    };
+			Matrix<Complex> matrix([[maybe_unused]] std::span<const double> angular_params) const override								\
+			{																															\
+				__VA_ARGS__																												\
+			}																															\
+    };																																	\
+	inline const gateNameSmall &gateName() { static const gateNameSmall gate; return gate; }											\
 
 namespace Gate
 {
@@ -72,9 +62,9 @@ namespace Gate
 	constexpr Complex Zero{0.0, 0.0};
 	constexpr Complex One{1.0, 0.0};
 	
-	DEFINE_NON_MATRIX_GATE(I, 1, 0, { return; });
+	DEFINE_NON_MATRIX_GATE(I, i, 1, 0, { return; });
 
-	DEFINE_NON_MATRIX_GATE(X, 1, 0,
+	DEFINE_NON_MATRIX_GATE(X, x, 1, 0,
 	{
 		const size_t mask = size_t{1} << qubits[0];
 
@@ -89,7 +79,7 @@ namespace Gate
 		}
 	});
 
-	DEFINE_NON_MATRIX_GATE(Y, 1, 0,
+	DEFINE_NON_MATRIX_GATE(Y, y, 1, 0,
 	{
 		const size_t mask = size_t{1} << qubits[0];
 
@@ -108,7 +98,7 @@ namespace Gate
 		}
 	});
 
-	DEFINE_NON_MATRIX_GATE(Z, 1, 0,
+	DEFINE_NON_MATRIX_GATE(Z, z, 1, 0,
 	{
 		const size_t mask = size_t{1} << qubits[0];
 
@@ -121,7 +111,7 @@ namespace Gate
 		}
 	 });
 
-	DEFINE_NON_MATRIX_GATE(H, 1, 0,
+	DEFINE_NON_MATRIX_GATE(H, h, 1, 0,
 	{
 		const size_t mask = size_t{1} << qubits[0];
 		const double inv_sqrt_2 = 1.0 / std::sqrt(2.0);
@@ -141,7 +131,7 @@ namespace Gate
 		}
 	});
 
-	DEFINE_NON_MATRIX_GATE(S, 1, 0,
+	DEFINE_NON_MATRIX_GATE(S, s, 1, 0,
 	{
 		const size_t mask = size_t{1} << qubits[0];
 
@@ -154,7 +144,7 @@ namespace Gate
 		}
 	});
 
-	DEFINE_NON_MATRIX_GATE(Sdg, 1, 0,
+	DEFINE_NON_MATRIX_GATE(Sdg, sdg, 1, 0,
 	{
 		const size_t mask = size_t{1} << qubits[0];
 
@@ -167,7 +157,7 @@ namespace Gate
 		}
 	});
 
-	DEFINE_NON_MATRIX_GATE(T, 1, 0,
+	DEFINE_NON_MATRIX_GATE(T, t, 1, 0,
 	{
 		const size_t mask = size_t{1} << qubits[0];
 
@@ -180,7 +170,7 @@ namespace Gate
 		}
 	});
 
-	DEFINE_NON_MATRIX_GATE(Tdg, 1, 0,
+	DEFINE_NON_MATRIX_GATE(Tdg, tdg, 1, 0,
 	{
 		const size_t mask = size_t{1} << qubits[0];
 
@@ -193,7 +183,7 @@ namespace Gate
 		}
 	});
 
-	DEFINE_NON_MATRIX_GATE(P, 1, 1,
+	DEFINE_NON_MATRIX_GATE(P, p, 1, 1,
 	{
 		const size_t mask = size_t{1} << qubits[0];
 
@@ -206,7 +196,7 @@ namespace Gate
 		}
 	});
 
-	DEFINE_NON_MATRIX_GATE(RZ, 1, 1,
+	DEFINE_NON_MATRIX_GATE(RZ, rz, 1, 1,
 	{
 		const size_t mask = size_t{1} << qubits[0];
 
@@ -224,7 +214,7 @@ namespace Gate
 		}
 	});
 
-	DEFINE_NON_MATRIX_GATE(RX, 1, 1,
+	DEFINE_NON_MATRIX_GATE(RX, rx, 1, 1,
 	{
 		const size_t mask = size_t{1} << qubits[0];
 
@@ -246,7 +236,7 @@ namespace Gate
 		}
 	});
 
-	DEFINE_NON_MATRIX_GATE(RY, 1, 1,
+	DEFINE_NON_MATRIX_GATE(RY, ry, 1, 1,
 	{
 		const size_t mask = size_t{1} << qubits[0];
 
@@ -268,7 +258,7 @@ namespace Gate
 		}
 	});
 
-	DEFINE_NON_MATRIX_GATE(CX, 2, 0,
+	DEFINE_NON_MATRIX_GATE(CX, cx, 2, 0,
 	{
 		const size_t control = qubits[0];
 		const size_t target = qubits[1];
@@ -290,7 +280,7 @@ namespace Gate
 		}
 	});
 
-	DEFINE_NON_MATRIX_GATE(CZ, 2, 0,
+	DEFINE_NON_MATRIX_GATE(CZ, cz, 2, 0,
 	{
 		const size_t control = qubits[0];
 		const size_t target = qubits[1];
@@ -310,7 +300,7 @@ namespace Gate
 		}
 	});
 
-	DEFINE_NON_MATRIX_GATE(CP, 2, 1,
+	DEFINE_NON_MATRIX_GATE(CP, cp, 2, 1,
 	{
 		const size_t control = qubits[0];
 		const size_t target = qubits[1];
@@ -330,7 +320,7 @@ namespace Gate
 		}
 	});
 	
-	DEFINE_NON_MATRIX_GATE(CRZ, 2, 1,
+	DEFINE_NON_MATRIX_GATE(CRZ, crz, 2, 1,
 	{
 		const size_t control = qubits[0];
 		const size_t target  = qubits[1];
@@ -355,7 +345,7 @@ namespace Gate
 		}
 	});
 
-	DEFINE_NON_MATRIX_GATE(CRX, 2, 1,
+	DEFINE_NON_MATRIX_GATE(CRX, crx, 2, 1,
 	{
 		const size_t control = qubits[0];
 		const size_t target  = qubits[1];
@@ -384,7 +374,7 @@ namespace Gate
 		}
 	});
 
-	DEFINE_NON_MATRIX_GATE(CRY, 2, 1,
+	DEFINE_NON_MATRIX_GATE(CRY, cry, 2, 1,
 	{
 		const size_t control = qubits[0];
 		const size_t target  = qubits[1];
@@ -413,7 +403,7 @@ namespace Gate
 		}
 	});
 
-	DEFINE_NON_MATRIX_GATE(SWAP, 2, 0,
+	DEFINE_NON_MATRIX_GATE(SWAP, swap, 2, 0,
 	{
 		const size_t qA = qubits[0];
 		const size_t qB = qubits[1];
@@ -435,7 +425,7 @@ namespace Gate
 		}
 	});
 
-	DEFINE_NON_MATRIX_GATE(ISWAP, 2, 0,
+	DEFINE_NON_MATRIX_GATE(ISWAP, iswap, 2, 0,
 	{
 		const size_t qA = qubits[0];
 		const size_t qB = qubits[1];
@@ -461,7 +451,7 @@ namespace Gate
 		}
 	});
 
-	DEFINE_NON_MATRIX_GATE(RZZ, 2, 1,
+	DEFINE_NON_MATRIX_GATE(RZZ, rzz, 2, 1,
 	{
 		const size_t qA = qubits[0];
 		const size_t qB = qubits[1];
@@ -486,7 +476,7 @@ namespace Gate
 		}
 	});
 
-	DEFINE_NON_MATRIX_GATE(CCX, 3, 0,
+	DEFINE_NON_MATRIX_GATE(CCX, ccx, 3, 0,
 	{
 		const size_t control0 = qubits[0];
 		const size_t control1 = qubits[1];
@@ -509,7 +499,7 @@ namespace Gate
 		}
 	});
 
-	DEFINE_NON_MATRIX_GATE(CCZ, 3, 0,
+	DEFINE_NON_MATRIX_GATE(CCZ, ccz, 3, 0,
 	{
 		const size_t control0 = qubits[0];
 		const size_t control1 = qubits[1];
@@ -526,7 +516,7 @@ namespace Gate
 		}
 	});
 
-	DEFINE_NON_MATRIX_GATE(CSWAP, 3, 0,
+	DEFINE_NON_MATRIX_GATE(CSWAP, cswap, 3, 0,
 	{
 		const size_t control = qubits[0];
 		const size_t qA = qubits[1];
@@ -553,7 +543,7 @@ namespace Gate
 		}
 	});
 
-	DEFINE_NON_MATRIX_MULTI_QUBITS_GATE(MCX, 2, 0,
+	DEFINE_NON_MATRIX_MULTI_QUBITS_GATE(MCX, mcx, 2, 0,
 	{
 		const size_t target = qubits[qubits.size() - 1];
 
@@ -577,7 +567,7 @@ namespace Gate
 		}
 	});
 
-	DEFINE_NON_MATRIX_MULTI_QUBITS_GATE(MCZ, 1, 0,
+	DEFINE_NON_MATRIX_MULTI_QUBITS_GATE(MCZ, mcz, 1, 0,
 	{
 		size_t control_mask = 0;
 		for (size_t i = 0; i != qubits.size(); i++)
@@ -592,7 +582,7 @@ namespace Gate
 		}
 	});
 
-	DEFINE_NON_MATRIX_MULTI_QUBITS_GATE(MCP, 1, 1,
+	DEFINE_NON_MATRIX_MULTI_QUBITS_GATE(MCP, mcp, 1, 1,
 	{
 		size_t control_mask = 0;
 		for (size_t i = 0; i != qubits.size(); i++)
@@ -609,7 +599,7 @@ namespace Gate
 		}
 	});
 
-	DEFINE_MATRIX_GATE(RXX, 2, 1,
+	DEFINE_MATRIX_GATE(RXX, rxx, 2, 1,
 	{
 		const double half_theta = angular_params[0] / 2.0;
 		const double cos = std::cos(half_theta);
@@ -624,7 +614,7 @@ namespace Gate
 			});
 	});
 
-	DEFINE_MATRIX_GATE(RYY, 2, 1,
+	DEFINE_MATRIX_GATE(RYY, ryy, 2, 1,
 	{
 		const double half_theta = angular_params[0] / 2.0;
 		const double cos = std::cos(half_theta);
@@ -640,7 +630,7 @@ namespace Gate
 		);
 	});
 
-	DEFINE_MATRIX_GATE(RZX, 2, 1,
+	DEFINE_MATRIX_GATE(RZX, rzx, 2, 1,
 	{
 		const double half_theta = angular_params[0] / 2.0;
 		const double cos = std::cos(half_theta);
@@ -656,7 +646,7 @@ namespace Gate
 		);
 	});
 
-	DEFINE_MATRIX_GATE(ECR, 2, 0,
+	DEFINE_MATRIX_GATE(ECR, ecr, 2, 0,
 	{
 		const double r = 1.0 / std::sqrt(2.0);
 
@@ -670,7 +660,7 @@ namespace Gate
 		);
 	});
 
-	DEFINE_MATRIX_GATE(U, 1, 3,
+	DEFINE_MATRIX_GATE(U, u, 1, 3,
 	{
 		const double theta  = angular_params[0];
 		const double phi    = angular_params[1];
@@ -687,7 +677,7 @@ namespace Gate
 		);
 	});
 
-	DEFINE_MATRIX_GATE(SX, 1, 0,
+	DEFINE_MATRIX_GATE(SX, sx, 1, 0,
 	{
 		return Matrix<Complex>(2, 2,
 			{
@@ -697,7 +687,7 @@ namespace Gate
 		);
 	});
 
-	DEFINE_MATRIX_GATE(CH, 2, 0,
+	DEFINE_MATRIX_GATE(CH, ch, 2, 0,
 	{
 		const double r = 1.0 / std::sqrt(2.0);
 
@@ -711,7 +701,7 @@ namespace Gate
 		);
 	});
 
-	DEFINE_MATRIX_GATE(SQRTSWAP, 2, 0,
+	DEFINE_MATRIX_GATE(SQRTSWAP, sqrtswap, 2, 0,
 	{
 		const Complex a{0.5,  0.5};
 		const Complex b{0.5, -0.5};
@@ -728,3 +718,4 @@ namespace Gate
 		);
 	});
 }
+

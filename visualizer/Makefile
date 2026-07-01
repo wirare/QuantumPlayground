@@ -1,8 +1,8 @@
 # Compiler and flags
 CXX := clang++
-#OPT_FLAGS := -O3 -march=native -mtune=native -funroll-loops -fvectorize -ffp-contract=fast -freciprocal-math -ffast-math -fstrict-aliasing -flto=full -mprefer-vector-width=256 -fomit-frame-pointer
+OPT_FLAGS := -O3 -march=native -mtune=native -funroll-loops -fvectorize -ffp-contract=fast -freciprocal-math -ffast-math -fstrict-aliasing -flto=full -mprefer-vector-width=256 -fomit-frame-pointer
 
-CXXFLAGS := -std=c++23 -Wall -Werror -Wextra -g #$(OPT_FLAGS) 
+CXXFLAGS := -std=c++23 -Wall -Werror -Wextra $(OPT_FLAGS) 
 CPPFLAGS := -Iincludes
 
 # Directories
