@@ -52,7 +52,7 @@ static size_t grover_iteration_count(size_t qubit_count)
 	);
 }
 
-static void apply_oracle_101(StateVector& sv)
+static QuantumCircuit get_oracle_101_circuit()
 {
 	// Mark |101>.
 	//
@@ -65,22 +65,25 @@ static void apply_oracle_101(StateVector& sv)
 	// q0 = 1
 	//
 	// Flip q1 so |101> becomes |111>.
-	sv.gate(Gate::X(), {1});
+	
+	QuantumCircuit qc;
 
-	// Phase flip |111>.
-	sv.gate(Gate::MCP(), {0, 1, 2}, {std::numbers::pi});
+	qc.add_gate(GateKind::X, {1});
+	qc.add_gate(GateKind::MCP, {0, 1, 2}, {std::numbers::pi});
+	qc.add_gate(GateKind::X, {1});
 
-	// Undo the q1 flip.
-	sv.gate(Gate::X(), {1});
+	return qc;
 }
 
-static void apply_diffuser(StateVector& sv, size_t qubit_count)
+static QuantumCircuit get_diffuser_circuit(size_t qubit_count)
 {
-	for (size_t q = 0; q != qubit_count; ++q)
-		sv.gate(Gate::H(), {q});
+	QuantumCircuit qc;
 
 	for (size_t q = 0; q != qubit_count; ++q)
-		sv.gate(Gate::X(), {q});
+		qc.add_gate(GateKind::H, {q});
+
+	for (size_t q = 0; q != qubit_count; ++q)
+		qc.add_gate(GateKind::X, {q});
 
 	std::vector<size_t> all_qubits;
 	all_qubits.reserve(qubit_count);
@@ -89,33 +92,35 @@ static void apply_diffuser(StateVector& sv, size_t qubit_count)
 		all_qubits.push_back(q);
 
 	// Phase flip |111...111>.
-	sv.gate(Gate::MCP(), all_qubits, {std::numbers::pi});
+	qc.add_gate(GateKind::MCP, all_qubits, {std::numbers::pi});
 
 	for (size_t q = 0; q != qubit_count; ++q)
-		sv.gate(Gate::X(), {q});
+		qc.add_gate(GateKind::X, {q});
 
 	for (size_t q = 0; q != qubit_count; ++q)
-		sv.gate(Gate::H(), {q});
+		qc.add_gate(GateKind::H, {q});
+
+	return qc;
 }
 
-static StateVector build_grover_101_state()
+static QuantumCircuit build_grover_algo_circuit(size_t qubit_count, const QuantumCircuit &oracle)
 {
-	constexpr size_t qubit_count = 3;
+	static const QuantumCircuit diffuser_qc = get_diffuser_circuit(qubit_count);
 
-	StateVector sv(qubit_count);
+	QuantumCircuit grover_qc;
 
-	for (size_t q = 0; q != qubit_count; ++q)
-		sv.gate(Gate::H(), {q});
+	for (size_t q = 0; q != qubit_count; q++)
+		grover_qc.add_gate(GateKind::H, {q});
 
 	const size_t iterations = grover_iteration_count(qubit_count);
 
-	for (size_t i = 0; i != iterations; ++i)
+	for (size_t i = 0; i != iterations; i++)
 	{
-		apply_oracle_101(sv);
-		apply_diffuser(sv, qubit_count);
+		grover_qc += oracle;
+		grover_qc += diffuser_qc;
 	}
 
-	return sv;
+	return grover_qc;
 }
 
 static void print_probability_table(const StateVector& sv, size_t qubit_count)
@@ -141,6 +146,8 @@ int main(int argc, char** argv)
 	const std::string marked_bitstring = "101";
 	const size_t marked_index = bitstring_to_index(marked_bitstring);
 
+	const QuantumCircuit grover_qc = build_grover_algo_circuit(qubit_count, get_oracle_101_circuit());
+
 	size_t runs = 100;
 
 	if (argc >= 2)
@@ -155,38 +162,16 @@ int main(int argc, char** argv)
 	std::cout << "Marked index:        " << marked_index << "\n";
 	std::cout << "Grover iterations:   " << iterations << "\n";
 	std::cout << "Runs:                " << runs << "\n";
+	std::cout << grover_qc;
 
-	{
-		StateVector preview = build_grover_101_state();
-		print_probability_table(preview, qubit_count);
-	}
+	// Simulate the circuit once.
+	StateVector sv(qubit_count);
+	grover_qc.apply(sv);
 
-	std::map<size_t, size_t> counts;
+	print_probability_table(sv, qubit_count);
 
-	const bool print_each_run = runs <= 64;
-
-	if (print_each_run)
-	{
-		std::cout << "\nPer-run measurements:\n";
-		std::cout << "---------------------\n";
-	}
-
-	for (size_t run = 0; run != runs; ++run)
-	{
-		StateVector sv = build_grover_101_state();
-
-		const size_t measured_index = sv.full_state_measurement();
-
-		counts[measured_index]++;
-
-		if (print_each_run)
-		{
-			std::cout << "Run " << std::setw(4) << run << ": "
-					  << "index=" << std::setw(2) << measured_index
-					  << " state=|" << index_to_bitstring(measured_index, qubit_count)
-					  << ">\n";
-		}
-	}
+	// Sample final state many times without collapse.
+	const std::vector<size_t> counts = sv.sample_full_state(runs);
 
 	std::cout << "\nMeasurement counts:\n";
 	std::cout << "-------------------\n";
@@ -195,8 +180,11 @@ int main(int argc, char** argv)
 	for (size_t i = 0; i != (size_t{1} << qubit_count); ++i)
 	{
 		const size_t count = counts[i];
+
 		const double frequency =
-			runs == 0 ? 0.0 : static_cast<double>(count) / static_cast<double>(runs);
+			runs == 0
+				? 0.0
+				: static_cast<double>(count) / static_cast<double>(runs);
 
 		std::cout << std::setw(5) << i << "  "
 				  << index_to_bitstring(i, qubit_count) << "   "
@@ -206,8 +194,11 @@ int main(int argc, char** argv)
 	}
 
 	const size_t success_count = counts[marked_index];
+
 	const double success_rate =
-		runs == 0 ? 0.0 : static_cast<double>(success_count) / static_cast<double>(runs);
+		runs == 0
+			? 0.0
+			: static_cast<double>(success_count) / static_cast<double>(runs);
 
 	std::cout << "\nSummary:\n";
 	std::cout << "--------\n";

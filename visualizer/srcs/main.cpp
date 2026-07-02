@@ -1,211 +1,285 @@
-#include <StateVector.hpp>
-#include <Gate.hpp>
+#include <string>
+#include <vtkActor.h>
+#include <vtkArrowSource.h>
+#include <vtkCamera.h>
+#include <vtkCellArray.h>
+#include <vtkInteractorStyleTrackballCamera.h>
+#include <vtkNamedColors.h>
+#include <vtkNew.h>
+#include <vtkPoints.h>
+#include <vtkPolyData.h>
+#include <vtkPolyDataMapper.h>
+#include <vtkProperty.h>
+#include <vtkRenderWindow.h>
+#include <vtkRenderWindowInteractor.h>
+#include <vtkRenderer.h>
+#include <vtkSphereSource.h>
+#include <algorithm>
+#include <array>
+#include <vtkAutoInit.h>
+#include <vtkBillboardTextActor3D.h>
+#include <vtkTextActor.h>
+#include <vtkTextProperty.h>
+#include <vtkMath.h>
+#include <vtkMatrix4x4.h>
+#include <vtkTransform.h>
+#include <vtkActor2D.h>
+
+VTK_MODULE_INIT(vtkRenderingOpenGL2);
+VTK_MODULE_INIT(vtkInteractionStyle);
+VTK_MODULE_INIT(vtkRenderingFreeType);
+
 #include <QuantumCircuit.hpp>
 
-#include <algorithm>
-#include <cmath>
-#include <cstdlib>
-#include <iomanip>
-#include <iostream>
-#include <map>
-#include <numbers>
-#include <string>
-#include <vector>
+using Coordinate = std::array<double, 3>;
 
-static std::string index_to_bitstring(size_t index, size_t qubit_count)
+#define UNPACK_COORD(c) c[0], c[1], c[2]
+
+static void SetArrowPose(vtkActor* actor, const Coordinate& start, const Coordinate& direction)
 {
-	std::string out;
+	double xAxis[3] = {UNPACK_COORD(direction)};
 
-	for (size_t i = 0; i != qubit_count; ++i)
+	const double length = vtkMath::Norm(xAxis);
+
+	if (length < 1e-12)
 	{
-		const size_t q = qubit_count - 1 - i;
-		out += ((index & (size_t{1} << q)) != 0) ? '1' : '0';
+		actor->SetVisibility(false);
+		return;
 	}
 
-	return out;
-}
+	actor->SetVisibility(true);
 
-static size_t bitstring_to_index(const std::string& bitstring)
-{
-	size_t index = 0;
+	vtkMath::Normalize(xAxis);
 
-	for (size_t i = 0; i != bitstring.size(); ++i)
+	double arbitrary[3] = {0.0, 0.0, 1.0};
+
+	if (std::abs(vtkMath::Dot(xAxis, arbitrary)) > 0.99)
 	{
-		const char c = bitstring[bitstring.size() - 1 - i];
-
-		if (c == '1')
-			index |= size_t{1} << i;
+		arbitrary[0] = 0.0;
+		arbitrary[1] = 1.0;
+		arbitrary[2] = 0.0;
 	}
 
-	return index;
+	double zAxis[3];
+	vtkMath::Cross(xAxis, arbitrary, zAxis);
+	vtkMath::Normalize(zAxis);
+
+	double yAxis[3];
+	vtkMath::Cross(zAxis, xAxis, yAxis);
+	vtkMath::Normalize(yAxis);
+
+	vtkNew<vtkMatrix4x4> matrix;
+	matrix->Identity();
+
+	matrix->SetElement(0, 0, xAxis[0]);
+	matrix->SetElement(1, 0, xAxis[1]);
+	matrix->SetElement(2, 0, xAxis[2]);
+
+	matrix->SetElement(0, 1, yAxis[0]);
+	matrix->SetElement(1, 1, yAxis[1]);
+	matrix->SetElement(2, 1, yAxis[2]);
+
+	matrix->SetElement(0, 2, zAxis[0]);
+	matrix->SetElement(1, 2, zAxis[1]);
+	matrix->SetElement(2, 2, zAxis[2]);
+
+	vtkNew<vtkTransform> transform;
+	transform->Translate(start[0], start[1], start[2]);
+	transform->Concatenate(matrix);
+	transform->Scale(length, length, length);
+
+	actor->SetUserTransform(transform);
 }
 
-static size_t grover_iteration_count(size_t qubit_count)
+namespace ActorFactory
 {
-	const double state_count = static_cast<double>(size_t{1} << qubit_count);
-
-	return std::max<size_t>(
-		1,
-		static_cast<size_t>(
-			std::floor((std::numbers::pi / 4.0) * std::sqrt(state_count))
-		)
-	);
-}
-
-static QuantumCircuit get_oracle_101_circuit()
-{
-	// Mark |101>.
-	//
-	// Basis display convention:
-	// |q2 q1 q0>
-	//
-	// |101> has:
-	// q2 = 1
-	// q1 = 0
-	// q0 = 1
-	//
-	// Flip q1 so |101> becomes |111>.
-	
-	QuantumCircuit qc;
-
-	qc.add_gate(GateKind::X, {1});
-	qc.add_gate(GateKind::MCP, {0, 1, 2}, {std::numbers::pi});
-	qc.add_gate(GateKind::X, {1});
-
-	return qc;
-}
-
-static QuantumCircuit get_diffuser_circuit(size_t qubit_count)
-{
-	QuantumCircuit qc;
-
-	for (size_t q = 0; q != qubit_count; ++q)
-		qc.add_gate(GateKind::H, {q});
-
-	for (size_t q = 0; q != qubit_count; ++q)
-		qc.add_gate(GateKind::X, {q});
-
-	std::vector<size_t> all_qubits;
-	all_qubits.reserve(qubit_count);
-
-	for (size_t q = 0; q != qubit_count; ++q)
-		all_qubits.push_back(q);
-
-	// Phase flip |111...111>.
-	qc.add_gate(GateKind::MCP, all_qubits, {std::numbers::pi});
-
-	for (size_t q = 0; q != qubit_count; ++q)
-		qc.add_gate(GateKind::X, {q});
-
-	for (size_t q = 0; q != qubit_count; ++q)
-		qc.add_gate(GateKind::H, {q});
-
-	return qc;
-}
-
-static QuantumCircuit build_grover_algo_circuit(size_t qubit_count, const QuantumCircuit &oracle)
-{
-	static const QuantumCircuit diffuser_qc = get_diffuser_circuit(qubit_count);
-
-	QuantumCircuit grover_qc;
-
-	for (size_t q = 0; q != qubit_count; q++)
-		grover_qc.add_gate(GateKind::H, {q});
-
-	const size_t iterations = grover_iteration_count(qubit_count);
-
-	for (size_t i = 0; i != iterations; i++)
+	vtkSmartPointer<vtkActor> MakeSphereActor(double radius = 1.0, const Coordinate &center = {0, 0, 0})
 	{
-		grover_qc += oracle;
-		grover_qc += diffuser_qc;
+		vtkNew<vtkSphereSource> sphere;
+		sphere->SetCenter(UNPACK_COORD(center));
+		sphere->SetRadius(radius);
+		sphere->SetThetaResolution(48);
+		sphere->SetPhiResolution(48);
+
+		vtkNew<vtkPolyDataMapper> mapper;
+		mapper->SetInputConnection(sphere->GetOutputPort());
+
+		vtkNew<vtkActor> actor;
+		actor->SetMapper(mapper);
+
+		return actor;
 	}
 
-	return grover_qc;
-}
-
-static void print_probability_table(const StateVector& sv, size_t qubit_count)
-{
-	const std::vector<double> probabilities = sv.full_state_probabilities();
-
-	std::cout << "\nFinal probabilities before measurement:\n";
-	std::cout << "--------------------------------------\n";
-	std::cout << "Index  State  Probability\n";
-
-	for (size_t i = 0; i != probabilities.size(); ++i)
+	vtkSmartPointer<vtkActor> MakeArrowActor(const Coordinate &pos = {0, 0, 0}, const Coordinate &orientation = {0, 0, 0}, double scale = 1)
 	{
-		std::cout << std::setw(5) << i << "  "
-				  << index_to_bitstring(i, qubit_count) << "   "
-				  << std::fixed << std::setprecision(8)
-				  << probabilities[i] << "\n";
+		vtkNew<vtkArrowSource> arrow;
+		arrow->SetTipResolution(32);
+		arrow->SetShaftResolution(32);
+		arrow->SetTipLength(0.25);
+		arrow->SetTipRadius(0.08);
+		arrow->SetShaftRadius(0.03);
+
+		vtkNew<vtkPolyDataMapper> mapper;
+		mapper->SetInputConnection(arrow->GetOutputPort());
+
+		vtkNew<vtkActor> actor;
+		actor->SetMapper(mapper);
+
+		actor->SetPosition(UNPACK_COORD(pos));
+		actor->SetScale(scale, scale, scale);
+		actor->SetOrientation(UNPACK_COORD(orientation));
+
+		return actor;
+	}
+
+	vtkSmartPointer<vtkActor> MakeSpinArrowActor(const Coordinate &center, const Coordinate &dir = {0, 1, 0})
+	{
+		auto arrow = MakeArrowActor(center);
+		arrow->GetProperty()->SetColor(1, 1, 0);
+
+		SetArrowPose(arrow, center, dir);
+		return arrow;
+	}
+
+	vtkSmartPointer<vtkBillboardTextActor3D> Make3DLabelActor(const Coordinate &pos, const std::string &text = "")
+	{
+		vtkNew<vtkBillboardTextActor3D> label;
+
+		label->SetInput(text.c_str());
+		label->SetPosition(UNPACK_COORD(pos));
+
+		label->GetTextProperty()->SetFontSize(16);
+		label->GetTextProperty()->SetColor(1, 1, 1);
+		label->GetTextProperty()->SetJustificationToCentered();
+		label->GetTextProperty()->SetVerticalJustificationToCentered();
+
+		return label;
+	}
+
+	vtkSmartPointer<vtkTextActor> MakeTextActor(int x, int y, int font_size = 11)
+	{
+		vtkNew<vtkTextActor> text;
+
+		text->SetInput("");
+		text->SetDisplayPosition(x, y);
+
+		text->GetTextProperty()->SetFontSize(font_size);
+		text->GetTextProperty()->SetColor(1.0, 1.0, 1.0);
+		text->GetTextProperty()->SetFontFamilyToCourier();
+
+		return text;
 	}
 }
 
-int main(int argc, char** argv)
+class BlochStepVisualizer
 {
-	constexpr size_t qubit_count = 3;
-	const std::string marked_bitstring = "101";
-	const size_t marked_index = bitstring_to_index(marked_bitstring);
+	public:
 
-	const QuantumCircuit grover_qc = build_grover_algo_circuit(qubit_count, get_oracle_101_circuit());
 
-	size_t runs = 100;
+	private:
+		QuantumCircuit qc;
+		size_t qubit_number = 0;
+		size_t max_cols = 5;
 
-	if (argc >= 2)
-		runs = static_cast<size_t>(std::stoull(argv[1]));
+		const std::vector<CircuitOperation> steps; 
+		size_t step_index = 0;
+		StateVector state;
 
-	const size_t iterations = grover_iteration_count(qubit_count);
+		vtkSmartPointer<vtkRenderer> renderer;
+		vtkSmartPointer<vtkRenderWindow> renderWindow;
+		vtkSmartPointer<vtkRenderWindowInteractor> interactor;
 
-	std::cout << "Grover test\n";
-	std::cout << "===========\n";
-	std::cout << "Qubits:              " << qubit_count << "\n";
-	std::cout << "Marked state:        |" << marked_bitstring << ">\n";
-	std::cout << "Marked index:        " << marked_index << "\n";
-	std::cout << "Grover iterations:   " << iterations << "\n";
-	std::cout << "Runs:                " << runs << "\n";
-	std::cout << grover_qc;
+		std::vector<Coordinate> centers;
 
-	// Simulate the circuit once.
-	StateVector sv(qubit_count);
-	grover_qc.apply(sv);
+		std::vector<vtkSmartPointer<vtkActor>> qubit_arrow_actors;
+		std::vector<vtkSmartPointer<vtkActor>> bloch_sphere_axis_arrows;
+		std::vector<vtkSmartPointer<vtkActor>> bloch_sphere_actors;
+		std::vector<vtkSmartPointer<vtkBillboardTextActor3D>> label_actors;
 
-	print_probability_table(sv, qubit_count);
+		vtkSmartPointer<vtkTextActor> text_actor;
+		vtkSmartPointer<vtkTextActor> info_actor;
 
-	// Sample final state many times without collapse.
-	const std::vector<size_t> counts = sv.sample_full_state(runs);
+		std::vector<Coordinate> make_centers()
+		{
+			constexpr double spacing = 3.2;
+			const size_t cols = std::min(qubit_number, max_cols);
+			const size_t rows = std::ceil(qubit_number / cols);
 
-	std::cout << "\nMeasurement counts:\n";
-	std::cout << "-------------------\n";
-	std::cout << "Index  State  Count  Frequency\n";
+			std::vector<Coordinate> centers;
 
-	for (size_t i = 0; i != (size_t{1} << qubit_count); ++i)
-	{
-		const size_t count = counts[i];
+			for (size_t i = 0; i != qubit_number; i++)
+			{
+				const size_t row = static_cast<size_t>(i / cols);
+				const size_t col = i % cols;
 
-		const double frequency =
-			runs == 0
-				? 0.0
-				: static_cast<double>(count) / static_cast<double>(runs);
+				const double x = (col - (cols - 1) / 2.0) * spacing;
+				const double z = ((rows - 1) / 2.0 - row) * spacing;
 
-		std::cout << std::setw(5) << i << "  "
-				  << index_to_bitstring(i, qubit_count) << "   "
-				  << std::setw(5) << count << "  "
-				  << std::fixed << std::setprecision(6)
-				  << frequency << "\n";
-	}
+				centers.push_back({x, 0.0, z});
+			}
 
-	const size_t success_count = counts[marked_index];
+			return centers;
+		}
 
-	const double success_rate =
-		runs == 0
-			? 0.0
-			: static_cast<double>(success_count) / static_cast<double>(runs);
+		double camera_distance()
+		{
+			const size_t cols = std::min(qubit_number, max_cols);
+			const size_t rows = std::ceil(qubit_number / cols);
 
-	std::cout << "\nSummary:\n";
-	std::cout << "--------\n";
-	std::cout << "Success count: " << success_count << " / " << runs << "\n";
-	std::cout << "Success rate:  "
-			  << std::fixed << std::setprecision(2)
-			  << success_rate * 100.0 << "%\n";
+			return std::max(8.0, 3.2 * std::max(cols, rows) * 1.6);
+		}
 
-	return 0;
-}
+		void build_scene()
+		{
+			renderer->SetBackground(0, 0, 0);
+
+			for (size_t i = 0; i != centers.size(); i++)
+			{
+				Coordinate center = centers[i];
+				
+				auto sphere = ActorFactory::MakeSphereActor(1.0, center);
+				sphere->GetProperty()->SetOpacity(0.18);
+				sphere->GetProperty()->SetColor(0.1, 0.3, 1.0);
+
+				bloch_sphere_actors.push_back(sphere);
+				renderer->AddActor(sphere);
+
+				auto x_arrow = ActorFactory::MakeArrowActor(center);
+				x_arrow->GetProperty()->SetColor(1, 0, 0);
+				x_arrow->GetProperty()->SetOpacity(0.35);
+
+				auto y_arrow = ActorFactory::MakeArrowActor(center, {0, 0, 90});
+				y_arrow->GetProperty()->SetColor(0, 1, 0);
+				y_arrow->GetProperty()->SetOpacity(0.35);
+
+				auto z_arrow = ActorFactory::MakeArrowActor(center, {0, -90, 0});
+				z_arrow->GetProperty()->SetColor(0, 0, 1);
+				z_arrow->GetProperty()->SetOpacity(0.35);
+
+				bloch_sphere_axis_arrows.push_back(x_arrow);
+				bloch_sphere_axis_arrows.push_back(y_arrow);
+				bloch_sphere_axis_arrows.push_back(z_arrow);
+				renderer->AddActor(x_arrow);
+				renderer->AddActor(y_arrow);
+				renderer->AddActor(z_arrow);
+
+				Coordinate label_point = {UNPACK_COORD(center) + 1.35};
+				auto label = ActorFactory::Make3DLabelActor(label_point, "q" + std::to_string(i));
+
+				label_actors.push_back(label);
+				renderer->AddActor(label);
+
+				auto arrow_actor = ActorFactory::MakeSpinArrowActor(center);
+
+				qubit_arrow_actors.push_back(arrow_actor);
+				renderer->AddActor(arrow_actor);
+			}
+
+			text_actor = ActorFactory::MakeTextActor(10, 780, 11);
+			renderer->AddActor2D(text_actor);
+
+			info_actor = ActorFactory::MakeTextActor(10, 35, 9);
+		}
+
+
+};

@@ -5,6 +5,7 @@
 #include <initializer_list>
 #include <random>
 #include <span>
+#include <stdexcept>
 #include <string>
 #include <vector>
 #include <IGate.hpp>
@@ -30,6 +31,20 @@ class MutableStateVectorView
 		Complex *m_data;
 		size_t m_qubit_count;
 		size_t m_amplitude_count;
+};
+
+enum class Pauli
+{
+	I,
+	X,
+	Y,
+	Z
+};
+
+struct PauliTerm
+{
+	Pauli op;
+	size_t qubit;
 };
 
 class StateVector
@@ -287,6 +302,91 @@ class StateVector
 			return sample_multiple_qubit_counts(std::span<const size_t>(qubits.begin(), qubits.size()), shots);
 		}
 
+		double pauli_string_expectation(std::span<const PauliTerm> pauli_string) const
+		{
+			validate_pauli_string(pauli_string);
+
+			Complex expectation{0.0, 0.0};
+
+			for (size_t i = 0; i != amplitudes.size(); i++)
+			{
+				const auto [mapped_index, phase] = apply_pauli_string_to_basis_index(i, pauli_string);
+
+				expectation += std::conj(amplitudes[mapped_index]) * phase * amplitudes[i];
+			}
+
+			return expectation.real();
+		}
+
+		double pauli_string_expectation(std::initializer_list<PauliTerm> pauli_string) const
+		{
+			return pauli_string_expectation(std::span<const PauliTerm>(pauli_string.begin(), pauli_string.size()));
+		}
+
+		double pauli_expectation(Pauli op, size_t qubit) const
+		{
+			return pauli_string_expectation({PauliTerm{op, qubit}});
+		}
+
+		int measure_pauli_string(std::span<const PauliTerm> pauli_string)
+		{
+			validate_pauli_string(pauli_string);
+
+			std::vector<Complex> transformed(amplitudes.size(), Complex{0.0, 0.0});
+
+			for (size_t i = 0; i != amplitudes.size(); i++)
+			{
+				const auto [mapped_index, phase] =
+					apply_pauli_string_to_basis_index(i, pauli_string);
+
+				transformed[mapped_index] += phase * amplitudes[i];
+			}
+
+			Complex expectation{0.0, 0.0};
+
+			for (size_t i = 0; i != amplitudes.size(); i++)
+				expectation += std::conj(amplitudes[i]) * transformed[i];
+
+			double exp_value = expectation.real();
+
+			if (exp_value > 1.0)
+				exp_value = 1.0;
+			else if (exp_value < -1.0)
+				exp_value = -1.0;
+
+			const double proba_plus = (1.0 + exp_value) / 2.0;
+			const double proba_minus = (1.0 - exp_value) / 2.0;
+
+			const std::vector<double> probas = {proba_plus, proba_minus};
+
+			const size_t sampled = sample_probas(probas);
+
+			const int eigenvalue = sampled == 0 ? 1 : -1;
+			const double chosen_proba = sampled == 0 ? proba_plus : proba_minus;
+
+			const double normalization = 2.0 * std::sqrt(chosen_proba);
+
+			for (size_t i = 0; i != amplitudes.size(); i++)
+			{
+				if (eigenvalue == +1)
+					amplitudes[i] = (amplitudes[i] + transformed[i]) / normalization;
+				else
+					amplitudes[i] = (amplitudes[i] - transformed[i]) / normalization;
+			}
+
+			return eigenvalue;
+		}
+
+		int measure_pauli_string(std::initializer_list<PauliTerm> pauli_string)
+		{
+			return measure_pauli_string(std::span<const PauliTerm>(pauli_string.begin(), pauli_string.size()));
+		}
+
+		int measure_pauli(Pauli op, size_t qubit)
+		{
+			return measure_pauli_string({PauliTerm{op, qubit}});
+		}
+
 		friend std::ostream& operator<<(std::ostream& os, const StateVector& sv);
 
 	private:
@@ -333,6 +433,73 @@ class StateVector
 			}
 
 			return local_outcome;
+		}
+
+		void validate_pauli_string(std::span<const PauliTerm> pauli_string) const
+		{
+			size_t used_qubits = 0;
+
+			for (const PauliTerm &term : pauli_string)
+			{
+				if (term.qubit >= qubit_count)
+					throw std::invalid_argument("Invalid qubit index in Pauli string");
+
+				if (term.op == Pauli::I)
+					continue;
+
+				const size_t bit = size_t{1} << term.qubit;
+
+				if ((used_qubits & bit) != 0)
+					throw std::invalid_argument("Duplicate qubit in Pauli string");
+
+				used_qubits |= bit;
+			}
+		}
+
+		std::pair<size_t, Complex> apply_pauli_string_to_basis_index(size_t basis_index, std::span<const PauliTerm> pauli_string) const
+		{
+			size_t mapped_index = basis_index;
+
+			Complex phase{1.0, 0.0};
+			const Complex Im{0.0, 1.0};
+
+			for (const PauliTerm &term : pauli_string)
+			{
+				const size_t mask = size_t{1} << term.qubit;
+				const bool bit_is_one = (basis_index & mask) != 0;
+
+				switch (term.op)
+				{
+					case Pauli::I:
+						break;
+
+					case Pauli::X:
+						{
+							mapped_index ^= mask;
+							break;
+						}
+
+					case Pauli::Y:
+						{
+							if (bit_is_one)
+								phase *= -Im;
+							else
+								phase *= Im;
+
+							mapped_index ^= mask;
+							break;
+						}
+
+					case Pauli::Z:
+						{
+							if (bit_is_one)
+								phase *= -1.0;
+							break;
+						}
+				}
+			}
+
+			return {mapped_index, phase};
 		}
 };
 

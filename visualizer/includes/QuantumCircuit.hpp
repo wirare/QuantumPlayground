@@ -130,6 +130,8 @@ class QuantumCircuit
 
 		size_t size() const { return circuit.size(); }
 
+		const std::vector<CircuitOperation> &get_raw_circuit() const { return circuit; }
+
 		friend std::ostream &operator<<(std::ostream &os, const QuantumCircuit &qc);
 
 	private:
