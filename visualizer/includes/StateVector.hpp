@@ -3,6 +3,7 @@
 #include <cmath>
 #include <complex>
 #include <initializer_list>
+#include <ostream>
 #include <random>
 #include <span>
 #include <stdexcept>
@@ -40,6 +41,21 @@ enum class Pauli
 	Y,
 	Z
 };
+
+#define CASE_PAULI_TO_STR(x) case Pauli::x: os << #x; break
+
+inline std::ostream &operator<<(std::ostream &os, Pauli p)
+{
+	switch (p)
+	{
+		CASE_PAULI_TO_STR(I);
+		CASE_PAULI_TO_STR(X);
+		CASE_PAULI_TO_STR(Y);
+		CASE_PAULI_TO_STR(Z);
+	}
+
+	return os;
+}
 
 struct PauliTerm
 {
@@ -385,6 +401,13 @@ class StateVector
 		int measure_pauli(Pauli op, size_t qubit)
 		{
 			return measure_pauli_string({PauliTerm{op, qubit}});
+		}
+
+		size_t get_qubit_count() const { return qubit_count; }
+
+		void reset()
+		{
+			std::fill(amplitudes.begin(), amplitudes.end(), Complex{0.0, 0.0});
 		}
 
 		friend std::ostream& operator<<(std::ostream& os, const StateVector& sv);

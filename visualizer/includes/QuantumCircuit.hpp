@@ -3,7 +3,9 @@
 #include <IGate.hpp>
 #include <Gate.hpp>
 #include <StateVector.hpp>
+#include <format>
 #include <ostream>
+#include <string>
 #include <vector>
 
 #define GATE_CASE(name) case GateKind::name: return Gate::name()
@@ -75,7 +77,29 @@ inline std::ostream &operator<<(std::ostream &os, const std::vector<K> &vec)
 
 inline std::ostream &operator<<(std::ostream &os, const CircuitOperation &op)
 {
-	os << "{Gate: " << kind_to_gate(op.kind).name() << ", Qubit(s): " << op.qubits << ", Param(s): " << op.params << "}";
+	os << kind_to_gate(op.kind).name();
+
+	if (op.params.size() != 0)
+	{
+		os << "[";
+		for (size_t i = 0; i != op.params.size(); i++)
+		{
+			os << std::format("{:.4g}", op.params[i]);
+			if (i != op.params.size() - 1)
+				os << ", ";
+		}
+		os << "]";
+	}
+	
+	os << "(";
+	for (size_t i = 0; i != op.qubits.size(); i++)
+	{
+		os << "q" << std::to_string(op.qubits[i]);
+		if (i != op.qubits.size() - 1)
+			os << ", ";
+	}
+	os << ")";
+
 	return os;
 }
 
@@ -105,6 +129,12 @@ class QuantumCircuit
 								 std::initializer_list<double> angular_params = {})
 		{
 			circuit.emplace_back(gate, std::move(qubits), angular_params);
+			return *this;
+		}
+
+		QuantumCircuit& add_gate(const CircuitOperation &op)
+		{
+			circuit.emplace_back(op);
 			return *this;
 		}
 
