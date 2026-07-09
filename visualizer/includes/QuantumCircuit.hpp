@@ -5,6 +5,7 @@
 #include <StateVector.hpp>
 #include <format>
 #include <ostream>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -53,12 +54,23 @@ inline const IGate &kind_to_gate(GateKind kind)
 	}
 }
 
+enum class MeasureKind
+{
+	NO_MEASURE,
+	SINGLE_QUBIT,
+	MULTIPLE_QUBIT,
+	ALL_QUBIT,
+};
+
 struct CircuitOperation
 {
-	GateKind kind;
+	GateKind kind = GateKind::I;
 
-	std::vector<size_t> qubits;
-	std::vector<double> params;
+	std::vector<size_t> qubits = {};
+	std::vector<double> params = {};
+	
+	bool is_measure = false;
+	MeasureKind m_kind = MeasureKind::NO_MEASURE;
 };
 
 template<typename K>
@@ -135,6 +147,35 @@ class QuantumCircuit
 		QuantumCircuit& add_gate(const CircuitOperation &op)
 		{
 			circuit.emplace_back(op);
+			return *this;
+		}
+
+		QuantumCircuit& add_measure(MeasureKind measure, std::vector<size_t> qubits = {})
+		{
+			switch (measure)
+			{
+				case MeasureKind::NO_MEASURE: break;
+				case MeasureKind::SINGLE_QUBIT:
+				{
+					if (qubits.size() != 1)
+						throw std::invalid_argument("Single qubits measure need 1 qubit");
+					circuit.emplace_back(CircuitOperation{.qubits = qubits, .is_measure = true, .m_kind = MeasureKind::SINGLE_QUBIT});	
+					break;
+				}
+				case MeasureKind::MULTIPLE_QUBIT:
+				{
+					if (qubits.empty())
+						throw std::invalid_argument("Multiple qubits measure need qubits");
+					circuit.emplace_back(CircuitOperation{.qubits = qubits, .is_measure = true, .m_kind = MeasureKind::MULTIPLE_QUBIT});
+					break;
+				}
+				case MeasureKind::ALL_QUBIT:
+				{
+					circuit.emplace_back(CircuitOperation{.is_measure = true, .m_kind = MeasureKind::ALL_QUBIT});
+					break;
+				}
+			}
+
 			return *this;
 		}
 

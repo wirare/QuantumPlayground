@@ -51,8 +51,8 @@ VTK_LIBS := \
 
 LDLIBS := $(VTK_LIBS)
 
-# Source and object files
-SRCFILES := $(wildcard $(SRCDIR)/*.cpp)
+# Source and object files, recursive
+SRCFILES := $(shell find $(SRCDIR) -type f -name '*.cpp')
 OBJFILES := $(patsubst $(SRCDIR)/%.cpp, $(OBJDIR)/%.o, $(SRCFILES))
 
 # Default target
@@ -64,8 +64,9 @@ $(TARGET): $(OBJFILES)
 	$(CXX) $(CXXFLAGS) $(OBJFILES) -o $(TARGET) $(LDFLAGS) $(LDLIBS)
 
 # Compile .cpp to .o
-$(OBJDIR)/%.o: $(SRCDIR)/%.cpp | $(OBJDIR)
+$(OBJDIR)/%.o: $(SRCDIR)/%.cpp
 	@echo "Compiling $<..."
+	@mkdir -p $(@D)
 	$(CXX) $(CXXFLAGS) $(CPPFLAGS) -c $< -o $@
 
 # Create object directory if it doesn't exist
