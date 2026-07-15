@@ -51,6 +51,7 @@ inline const IGate &kind_to_gate(GateKind kind)
 		GATE_CASE(SX);
 		GATE_CASE(CH);
 		GATE_CASE(SQRTSWAP);
+		GATE_CASE(CNOT);
 	}
 }
 
@@ -114,6 +115,8 @@ inline std::ostream &operator<<(std::ostream &os, const CircuitOperation &op)
 
 	return os;
 }
+
+using MeasureResult = std::pair<std::vector<size_t>, size_t>;
 
 class QuantumCircuit
 {
@@ -179,10 +182,49 @@ class QuantumCircuit
 			return *this;
 		}
 
+		void apply(StateVector& sv, std::vector<MeasureResult> &measure_results) const
+		{
+			for (const CircuitOperation& op : circuit)
+			{	
+				if (!op.is_measure)
+					sv.gate(kind_to_gate(op.kind), op.qubits, op.params);
+				else
+				{
+					switch (op.m_kind)
+					{
+						case MeasureKind::NO_MEASURE: continue;
+						case MeasureKind::SINGLE_QUBIT:
+						{
+							MeasureResult res = {op.qubits, sv.single_qubit_measurement(op.qubits[0])};
+							measure_results.push_back(res);
+							break;
+						}
+						case MeasureKind::MULTIPLE_QUBIT:
+						{
+							MeasureResult res = {op.qubits, sv.multiple_qubit_measurement(op.qubits)};
+							measure_results.push_back(res);
+							break;
+						}
+						case MeasureKind::ALL_QUBIT:
+						{
+							MeasureResult res = {{}, sv.full_state_measurement()};
+							measure_results.push_back(res);
+							break;
+						}
+					}
+				}
+			}
+		}
+
 		void apply(StateVector& sv) const
 		{
 			for (const CircuitOperation& op : circuit)
-				sv.gate(kind_to_gate(op.kind), op.qubits, op.params);
+			{	
+				if (!op.is_measure)
+					sv.gate(kind_to_gate(op.kind), op.qubits, op.params);
+				else
+					throw std::runtime_error("Trying to apply a measurement, but it was called without space to stock them, pass a std::vector<MeasureResult> if you have measurement gate in the circuit");
+			}
 		}
 
 		QuantumCircuit &operator+=(const QuantumCircuit &other)

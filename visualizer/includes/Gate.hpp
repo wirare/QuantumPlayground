@@ -403,6 +403,28 @@ namespace Gate
 		}
 	});
 
+	DEFINE_NON_MATRIX_GATE(CNOT, cnot, 2, 0,
+	{
+		const size_t control = qubits[0];
+		const size_t target	 = qubits[1];
+
+		const size_t control_mask = size_t{1} << control;
+		const size_t target_mask = size_t{1} << target;
+
+		for (size_t i = 0; i != state.amplitude_count(); i++)
+		{
+			if ((i & control_mask) == 0)
+				continue;
+
+			if ((i & target_mask) != 0)
+				continue;
+
+			const size_t j = i | target_mask;
+
+			std::swap(state.amplitude(i), state.amplitude(j));
+		}
+	});
+
 	DEFINE_NON_MATRIX_GATE(SWAP, swap, 2, 0,
 	{
 		const size_t qA = qubits[0];

@@ -6,7 +6,7 @@ OPT_FLAGS := -O3 -march=native -mtune=native -funroll-loops -fvectorize \
              -fstrict-aliasing -flto=full -mprefer-vector-width=256 \
              -fomit-frame-pointer
 
-CXXFLAGS := -std=c++23 -Wall -Werror -Wextra $(OPT_FLAGS)
+CXXFLAGS := -std=c++23 -Wall -Werror -Wextra -g#$(OPT_FLAGS)
 
 # Directories
 SRCDIR := srcs

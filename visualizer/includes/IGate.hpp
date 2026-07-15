@@ -63,4 +63,5 @@ enum class GateKind
 	SX,
 	CH,
 	SQRTSWAP,
+	CNOT,
 };
