@@ -3,6 +3,7 @@
 #include <IGate.hpp>
 #include <Gate.hpp>
 #include <StateVector.hpp>
+#include <algorithm>
 #include <format>
 #include <ostream>
 #include <stdexcept>
@@ -122,6 +123,8 @@ class QuantumCircuit
 {
 	public:
 		QuantumCircuit() = default;
+
+		QuantumCircuit(const std::vector<CircuitOperation> &ops): circuit(ops) {};
 
 		QuantumCircuit& add_gate(GateKind gate,
 								 std::initializer_list<size_t> qubits,
@@ -244,6 +247,15 @@ class QuantumCircuit
 		size_t size() const { return circuit.size(); }
 
 		const std::vector<CircuitOperation> &get_raw_circuit() const { return circuit; }
+
+		QuantumCircuit reverse() const
+		{
+			QuantumCircuit rqc(circuit);
+
+			std::reverse(rqc.circuit.begin(), rqc.circuit.end());
+
+			return rqc;
+		}
 
 		friend std::ostream &operator<<(std::ostream &os, const QuantumCircuit &qc);
 
